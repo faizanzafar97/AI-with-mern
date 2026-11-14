@@ -12,4 +12,11 @@ authrouter.post('/register', authcontroller.registerUser);
 
 authrouter.post('/login', authcontroller.loginUser);
 
+/**
+ * @route get /api/auth/logout
+ * @desc Logout user and invalidate JWT token
+ * @access Public
+ */
+authrouter.get('/logout', authcontroller.logoutUser);
+
 module.exports=authrouter;

@@ -2,6 +2,7 @@
 const userModel = require('../models/user.model');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const Blacklist = require('../models/blacklist.model');
 
 // Register User
 async function registerUser(req, res) {
@@ -105,6 +106,23 @@ async function loginUser(req, res) {
         res.status(500).json({ message: 'Internal server error' });
     }           
 }
-        
+      
+async function logoutUser(req, res) {
+    try {
+        const token = req.cookies.token;
+        if (!token) {
+            return res.status(400).json({ message: 'No token found' });
+        }
+        const blacklist = new Blacklist({ token });
+        await blacklist.save();
 
-module.exports = { registerUser, loginUser };
+        res.clearCookie('token');
+        res.status(200).json({ message: 'Logout successful' });
+    } catch (error) {
+        console.error('Logout Error:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+    
+}
+
+module.exports = { registerUser, loginUser, logoutUser };
