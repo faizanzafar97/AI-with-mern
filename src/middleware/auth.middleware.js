@@ -25,6 +25,7 @@ async function requireAuth(req, res, next) {
     }
 
     req.user = { id: payload.id };
+    req.authToken = token;
     return next();
   } catch (error) {
     if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {

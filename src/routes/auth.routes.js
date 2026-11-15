@@ -1,5 +1,6 @@
 const {Router}=require('express');
 const authcontroller=require('../controllers/auth.controller');
+const requireAuth = require('../middleware/auth.middleware');
 
 const authrouter=Router();
 authrouter.post('/register', authcontroller.registerUser);
@@ -13,10 +14,10 @@ authrouter.post('/register', authcontroller.registerUser);
 authrouter.post('/login', authcontroller.loginUser);
 
 /**
- * @route get /api/auth/logout
+ * @route POST /api/auth/logout
  * @desc Logout user and invalidate JWT token
  * @access Public
  */
-authrouter.get('/logout', authcontroller.logoutUser);
+authrouter.post('/logout', requireAuth, authcontroller.logoutUser);
 
 module.exports=authrouter;

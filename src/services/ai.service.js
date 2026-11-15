@@ -3,13 +3,14 @@ const OpenAI = require('openai');
 let openaiClient;
 
 function getClient() {
-  if (!process.env.OPENAI_API_KEY) {
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  if (!apiKey) {
     const error = new Error('OPENAI_API_KEY is not configured');
     error.code = 'AI_NOT_CONFIGURED';
     throw error;
   }
 
-  openaiClient ||= new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  openaiClient ||= new OpenAI({ apiKey, timeout: 45_000, maxRetries: 2 });
   return openaiClient;
 }
 
@@ -106,7 +107,8 @@ async function generateQuestions({ role, level, focus }) {
   }
 
   for (const question of result.questions) {
-    if (typeof question.text !== 'string' || question.text.trim().length < 10) {
+    if (typeof question.text !== 'string' || question.text.trim().length < 10
+      || typeof question.competency !== 'string' || question.competency.trim().length === 0) {
       throw new Error('AI response contained an invalid interview question');
     }
   }

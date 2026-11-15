@@ -15,7 +15,33 @@ function sendAIError(res, error) {
   }
 
   if (error.status === 429) {
-    return res.status(503).json({ message: 'The AI service is busy or its usage limit was reached. Please try again later.' });
+    const code = String(error.code || '').toLowerCase();
+    const type = String(error.type || '').toLowerCase();
+    const quotaCodes = new Set([
+      'insufficient_quota',
+      'credit_balance_exhausted',
+      'organization_spend_limit_exceeded',
+      'project_spend_limit_exceeded',
+      'organization_usage_limit_exceeded',
+    ]);
+
+    console.warn('OpenAI returned HTTP 429:', code || type || 'unclassified', error.request_id || '');
+    if (quotaCodes.has(code) || type === 'insufficient_quota') {
+      return res.status(503).json({
+        message: 'The OpenAI API project has reached a billing or usage limit. Check its API credits and spend limits.',
+      });
+    }
+
+    const retryAfter = error.headers?.get?.('retry-after');
+    if (retryAfter && /^\d+$/.test(retryAfter)) res.set('Retry-After', retryAfter);
+    return res.status(429).json({
+      message: 'The AI service received too many requests. Wait a little, then try again.',
+    });
+  }
+
+  if (error.status === 503) {
+    console.warn('OpenAI model is temporarily unavailable:', error.code || error.request_id || '');
+    return res.status(503).json({ message: 'The AI model is temporarily busy. Please try again shortly.' });
   }
 
   console.error('AI request failed:', error.message);
@@ -23,9 +49,10 @@ function sendAIError(res, error) {
 }
 
 async function startInterview(req, res) {
-  const role = typeof req.body.role === 'string' ? req.body.role.trim() : '';
-  const level = typeof req.body.level === 'string' ? req.body.level.trim() : '';
-  const focus = typeof req.body.focus === 'string' ? req.body.focus.trim() : '';
+  const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+  const role = typeof body.role === 'string' ? body.role.trim() : '';
+  const level = typeof body.level === 'string' ? body.level.trim() : '';
+  const focus = typeof body.focus === 'string' ? body.focus.trim() : '';
 
   if (role.length < 2 || role.length > 100 || !allowedLevels.has(level) || focus.length < 2 || focus.length > 100) {
     return res.status(400).json({ message: 'Provide a valid role, experience level, and focus area.' });
@@ -106,7 +133,8 @@ async function completeInterview(interview, res, feedback = null) {
 }
 
 async function submitAnswer(req, res) {
-  const answer = typeof req.body.answer === 'string' ? req.body.answer.trim() : '';
+  const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+  const answer = typeof body.answer === 'string' ? body.answer.trim() : '';
   if (answer.length < 5 || answer.length > 6000) {
     return res.status(400).json({ message: 'Your answer must be between 5 and 6000 characters.' });
   }

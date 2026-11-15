@@ -9,12 +9,18 @@ const roleOptions = [
 ];
 
 async function apiRequest(path, { method = 'GET', body } = {}) {
-  const response = await fetch(`/api/${path}`, {
-    method,
-    credentials: 'include',
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let response;
+  try {
+    response = await fetch(`/api/${path}`, {
+      method,
+      credentials: 'include',
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    throw new Error('Can’t reach the backend. Start the server on port 3000 and check its MongoDB connection, then try again.');
+  }
+
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.message || 'The request could not be completed.');
   return data;
@@ -234,7 +240,7 @@ export default function App() {
   }
 
   async function signOut() {
-    try { await apiRequest('auth/logout'); } catch { /* End the local UI session even if the server is unavailable. */ }
+    try { await apiRequest('auth/logout', { method: 'POST' }); } catch { /* End the local UI session even if the server is unavailable. */ }
     setUser(null);
     setSettings(null);
     setSession(null);
