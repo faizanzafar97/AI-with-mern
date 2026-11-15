@@ -1,54 +1,27 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 
-const questionSets = {
-  'Software Engineer': [
-    'Tell me about a project you built recently. What problem did it solve, and what was your contribution?',
-    'Describe a difficult technical bug you solved. How did you narrow down the cause?',
-    'How do you decide when to improve existing code and when to ship a simpler solution?',
-  ],
-  'Frontend Developer': [
-    'How do you make a web interface accessible and usable across different screen sizes?',
-    'Tell me about a frontend performance problem you investigated. What did you change?',
-    'How do you organize components when a product interface starts to grow?',
-  ],
-  'Backend Developer': [
-    'How would you design an API endpoint that needs to handle a large number of requests?',
-    'Tell me about a database or backend performance issue you diagnosed.',
-    'How do you handle failures between services while keeping an API reliable?',
-  ],
-  'Product Manager': [
-    'Tell me about a product decision you made with incomplete information.',
-    'How do you prioritize customer requests when the team has limited time?',
-    'Which metrics would you use to decide whether a new feature is successful?',
-  ],
-  Designer: [
-    'Walk me through a design project from the initial problem to the final result.',
-    'How do you use research or feedback when your first design direction is challenged?',
-    'How do you balance usability, accessibility, and visual consistency?',
-  ],
-};
+const roleOptions = [
+  'Software Engineer',
+  'Frontend Developer',
+  'Backend Developer',
+  'Product Manager',
+  'Designer',
+];
 
-const roleOptions = Object.keys(questionSets);
-
-async function authRequest(path, body) {
-  const response = await fetch(`/api/auth/${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+async function apiRequest(path, { method = 'GET', body } = {}) {
+  const response = await fetch(`/api/${path}`, {
+    method,
     credentials: 'include',
-    body: JSON.stringify(body),
+    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.message || 'Unable to complete that request.');
+  if (!response.ok) throw new Error(data.message || 'The request could not be completed.');
   return data;
 }
 
-function Brand({ compact = false }) {
-  return (
-    <div className={`brand ${compact ? 'brand-compact' : ''}`}>
-      <span className="brand-mark" aria-hidden="true">i</span>
-      <span>interviewly</span>
-    </div>
-  );
+function Brand() {
+  return <div className="brand"><span className="brand-mark" aria-hidden="true">i</span><span>interviewly</span></div>;
 }
 
 function AuthScreen({ onAuthenticated }) {
@@ -57,22 +30,25 @@ function AuthScreen({ onAuthenticated }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  function update(event) {
-    setForm((current) => ({ ...current, [event.target.name]: event.target.value }));
-  }
-
   async function submit(event) {
     event.preventDefault();
     setError('');
     setBusy(true);
     try {
-      const data = await authRequest(mode === 'login' ? 'login' : 'register', form);
-      onAuthenticated(data.user);
+      const result = await apiRequest(`auth/${mode === 'login' ? 'login' : 'register'}`, {
+        method: 'POST',
+        body: form,
+      });
+      onAuthenticated(result.user);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
       setBusy(false);
     }
+  }
+
+  function update(event) {
+    setForm((current) => ({ ...current, [event.target.name]: event.target.value }));
   }
 
   return (
@@ -104,7 +80,7 @@ function AuthScreen({ onAuthenticated }) {
             {error && <div className="form-error" role="alert">{error}</div>}
             <button className="button button-primary auth-submit" disabled={busy} type="submit">{busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'} <span aria-hidden="true">→</span></button>
           </form>
-          <p className="auth-footnote">By continuing, you agree to use practice feedback as a learning aid.</p>
+          <p className="auth-footnote">Practice feedback is a learning aid, not a hiring decision.</p>
         </div>
       </section>
     </main>
@@ -112,68 +88,163 @@ function AuthScreen({ onAuthenticated }) {
 }
 
 function Header({ user, onLogout, onHome }) {
-  return <header className="topbar"><button className="brand brand-button" onClick={onHome} type="button"><span className="brand-mark" aria-hidden="true">i</span><span>interviewly</span></button><div className="topbar-right"><span className="user-greeting">{user?.name || user?.email}</span><button className="text-button" onClick={onLogout} type="button">Sign out</button><span className="avatar">{(user?.name || user?.email || 'U').slice(0, 1).toUpperCase()}</span></div></header>;
+  return (
+    <header className="topbar">
+      <button className="brand brand-button" onClick={onHome} type="button"><span className="brand-mark" aria-hidden="true">i</span><span>interviewly</span></button>
+      <div className="topbar-right"><span className="user-greeting">{user?.name || user?.email}</span><button className="text-button" onClick={onLogout} type="button">Sign out</button><span className="avatar">{(user?.name || user?.email || 'U').slice(0, 1).toUpperCase()}</span></div>
+    </header>
+  );
 }
 
-function Dashboard({ user, onStart, onLogout, onHome }) {
+function Dashboard({ user, onStart, onLogout, onHome, busy, error }) {
   const [role, setRole] = useState(roleOptions[0]);
   const [level, setLevel] = useState('Early career');
   const [focus, setFocus] = useState('Communication & clarity');
-  return <div className="app-shell"><Header onHome={onHome} onLogout={onLogout} user={user} />
-    <main className="dashboard content-width">
-      <section className="welcome-row"><div><span className="eyebrow">YOUR PRACTICE SPACE</span><h1>Good to see you{user?.name ? `, ${user.name.split(' ')[0]}` : ''}.</h1><p className="muted">A little practice can make a big difference.</p></div><div className="date-chip"><span className="date-dot" /> Practice at your own pace</div></section>
-      <section className="hero-card"><div className="hero-text"><span className="eyebrow light-eyebrow">YOUR NEXT INTERVIEW</span><h2>Make room for<br />your best answer.</h2><p>Choose a role and focus area. We’ll guide you through a short practice round.</p><div className="hero-meta"><span>◷ &nbsp;About 10 minutes</span><span>▤ &nbsp;3 questions</span></div></div><div className="hero-art" aria-hidden="true"><div className="art-ring ring-a"/><div className="art-ring ring-b"/><div className="art-card"><span className="art-card-label">A MOMENT TO THINK</span><span className="art-card-line line-a"/><span className="art-card-line line-b"/><span className="art-card-line line-c"/><span className="art-card-spark">✳</span></div><span className="art-spark spark-a">✦</span><span className="art-spark spark-b">✳</span></div></section>
-      <div className="section-heading"><div><span className="eyebrow">SET YOUR INTENTION</span><h2>What would you like to practice?</h2></div><span className="step-label">01 <i /> 02 <i /> 03</span></div>
-      <section className="setup-card"><div className="setup-grid"><label>Role or position<select value={role} onChange={(event) => setRole(event.target.value)}>{roleOptions.map((option) => <option key={option}>{option}</option>)}</select><span className="field-hint">Pick the kind of work you’re preparing for.</span></label><label>Experience level<select value={level} onChange={(event) => setLevel(event.target.value)}><option>Student</option><option>Early career</option><option>Mid-level</option><option>Senior</option></select><span className="field-hint">Questions are a starting point for your level.</span></label></div><div className="focus-section"><div className="focus-label"><span>Focus area</span><span className="optional-label">Choose one</span></div><div className="focus-options">{['Communication & clarity', 'Problem solving', 'Behavioral stories'].map((option, index) => <button className={`focus-option ${focus === option ? 'active' : ''}`} key={option} onClick={() => setFocus(option)} type="button"><span className="focus-icon">{['◌', '⌘', '↗'][index]}</span><span>{option}</span>{focus === option && <span className="check-mark">✓</span>}</button>)}</div></div><div className="setup-footer"><p><span className="info-icon">i</span> You can take your time. There are no wrong first drafts.</p><button className="button button-primary" onClick={() => onStart({ role, level, focus })} type="button">Start practice <span aria-hidden="true">→</span></button></div></section>
-      <p className="demo-banner"><span>✳</span> Preview mode: these are sample prompts. AI-generated questions and feedback will be connected when the interview API is added.</p>
-    </main><footer className="footer">A thoughtful practice space for your next opportunity.</footer></div>;
+
+  return (
+    <div className="app-shell">
+      <Header onHome={onHome} onLogout={onLogout} user={user} />
+      <main className="dashboard content-width">
+        <section className="welcome-row"><div><span className="eyebrow">YOUR PRACTICE SPACE</span><h1>Good to see you{user?.name ? `, ${user.name.split(' ')[0]}` : ''}.</h1><p className="muted">A little practice can make a big difference.</p></div><div className="date-chip"><span className="date-dot" /> Practice at your own pace</div></section>
+        <section className="hero-card"><div className="hero-text"><span className="eyebrow light-eyebrow">YOUR NEXT INTERVIEW</span><h2>Make room for<br />your best answer.</h2><p>Choose a role and focus area. Your AI coach will guide you through a short practice round.</p><div className="hero-meta"><span>◷ &nbsp;About 10 minutes</span><span>▤ &nbsp;3 questions</span></div></div><div className="hero-art" aria-hidden="true"><div className="art-ring ring-a"/><div className="art-ring ring-b"/><div className="art-card"><span className="art-card-label">A MOMENT TO THINK</span><span className="art-card-line line-a"/><span className="art-card-line line-b"/><span className="art-card-line line-c"/><span className="art-card-spark">✳</span></div><span className="art-spark spark-a">✦</span><span className="art-spark spark-b">✳</span></div></section>
+        <div className="section-heading"><div><span className="eyebrow">SET YOUR INTENTION</span><h2>What would you like to practice?</h2></div><span className="step-label">01 <i /> 02 <i /> 03</span></div>
+        <section className="setup-card">
+          <div className="setup-grid">
+            <label>Role or position<select value={role} onChange={(event) => setRole(event.target.value)}>{roleOptions.map((option) => <option key={option}>{option}</option>)}</select><span className="field-hint">Pick the kind of work you’re preparing for.</span></label>
+            <label>Experience level<select value={level} onChange={(event) => setLevel(event.target.value)}><option>Student</option><option>Early career</option><option>Mid-level</option><option>Senior</option></select><span className="field-hint">Questions are tailored to your level.</span></label>
+          </div>
+          <div className="focus-section"><div className="focus-label"><span>Focus area</span><span className="optional-label">Choose one</span></div><div className="focus-options">{['Communication & clarity', 'Problem solving', 'Behavioral stories'].map((option, index) => <button className={`focus-option ${focus === option ? 'active' : ''}`} key={option} onClick={() => setFocus(option)} type="button"><span className="focus-icon">{['◌', '⌘', '↗'][index]}</span><span>{option}</span>{focus === option && <span className="check-mark">✓</span>}</button>)}</div></div>
+          {error && <div className="form-error start-error" role="alert">{error}</div>}
+          <div className="setup-footer"><p><span className="info-icon">i</span> You can take your time. There are no wrong first drafts.</p><button className="button button-primary" disabled={busy} onClick={() => onStart({ role, level, focus })} type="button">{busy ? 'Preparing questions…' : 'Start practice'} <span aria-hidden="true">→</span></button></div>
+        </section>
+      </main>
+      <footer className="footer">AI feedback is for practice and learning, not for employment decisions.</footer>
+    </div>
+  );
 }
 
-function Interview({ settings, onFinish, onExit }) {
-  const questions = useMemo(() => questionSets[settings.role] || questionSets['Software Engineer'], [settings.role]);
-  const [index, setIndex] = useState(0);
-  const [answers, setAnswers] = useState(() => Array(questions.length).fill(''));
+function Interview({ session, feedback, onSubmit, onExit, busy, error }) {
+  const [answer, setAnswer] = useState('');
   const [showExit, setShowExit] = useState(false);
-  const answer = answers[index] || '';
-  const progress = ((index + 1) / questions.length) * 100;
-  function saveAnswer(value) { setAnswers((current) => current.map((item, itemIndex) => itemIndex === index ? value : item)); }
-  function next() {
-    if (!answer.trim()) return;
-    if (index === questions.length - 1) onFinish({ settings, questions, answers: answers.map((item, itemIndex) => itemIndex === index ? answer : item) });
-    else setIndex((current) => current + 1);
-  }
-  return <div className="app-shell interview-shell"><Header onHome={() => setShowExit(true)} onLogout={() => setShowExit(true)} user={{ name: 'Practice session' }} />
-    <main className="interview-main"><div className="interview-topline"><button className="back-link" onClick={() => setShowExit(true)} type="button">← <span>End practice</span></button><span className="practice-tag"><span className="date-dot" /> PRACTICE SESSION</span><span className="interview-role">{settings.role}</span></div>
-      <div className="progress-heading"><div><span className="eyebrow">QUESTION {String(index + 1).padStart(2, '0')} <span className="muted">/ {String(questions.length).padStart(2, '0')}</span></span><h1>Take a moment.<br />Then answer in your own words.</h1></div><div className="timer-note">◷ &nbsp;No time limit</div></div>
-      <div className="progress-track"><span style={{ width: `${progress}%` }} /></div>
-      <section className="question-card"><div className="question-card-top"><span className="question-icon">✳</span><span>YOUR QUESTION</span><span className="question-count">{index + 1} of {questions.length}</span></div><h2>{questions[index]}</h2><div className="answer-label"><label htmlFor="answer">Your answer</label><span>{answer.trim() ? `${answer.trim().split(/\s+/).length} words` : 'Take your time'}</span></div><textarea autoFocus id="answer" onChange={(event) => saveAnswer(event.target.value)} placeholder="Start wherever feels natural. You can refine your answer as you go…" value={answer} /><div className="answer-tip"><span>✦</span> Try sharing the situation, what you did, and what changed.</div></section>
-      <div className="interview-actions"><span className="saved-note">Your answer stays in this session.</span><button className="button button-primary" disabled={!answer.trim()} onClick={next} type="button">{index === questions.length - 1 ? 'Finish practice' : 'Next question'} <span aria-hidden="true">→</span></button></div>
-      <div className="interview-footnote">{settings.level} <span>·</span> {settings.focus}</div>
-    </main>
-    {showExit && <div className="modal-backdrop" role="presentation"><section aria-labelledby="exit-title" aria-modal="true" className="confirm-modal" role="dialog"><span className="modal-icon">↗</span><h2 id="exit-title">Leave this practice?</h2><p>Your answers from this session won’t be saved.</p><div><button className="button button-secondary" onClick={() => setShowExit(false)} type="button">Keep practicing</button><button className="button button-primary" onClick={onExit} type="button">Leave session</button></div></section></div>}
-  </div>;
+  const progress = (session.questionNumber / session.totalQuestions) * 100;
+
+  useEffect(() => setAnswer(''), [session.questionNumber]);
+
+  return (
+    <div className="app-shell interview-shell">
+      <Header onHome={() => setShowExit(true)} onLogout={() => setShowExit(true)} user={{ name: 'Practice session' }} />
+      <main className="interview-main">
+        <div className="interview-topline"><button className="back-link" onClick={() => setShowExit(true)} type="button">← <span>End practice</span></button><span className="practice-tag"><span className="date-dot" /> AI PRACTICE SESSION</span><span className="interview-role">{session.settings.role}</span></div>
+        <div className="progress-heading"><div><span className="eyebrow">QUESTION {String(session.questionNumber).padStart(2, '0')} <span className="muted">/ {String(session.totalQuestions).padStart(2, '0')}</span></span><h1>Take a moment.<br />Then answer in your own words.</h1></div><div className="timer-note">◷ &nbsp;No time limit</div></div>
+        <div className="progress-track"><span style={{ width: `${progress}%` }} /></div>
+        {feedback && <section className="turn-feedback"><span className="eyebrow">FEEDBACK ON YOUR LAST ANSWER · {feedback.score}/5</span><p>{feedback.advice}</p></section>}
+        <section className="question-card"><div className="question-card-top"><span className="question-icon">✳</span><span>YOUR QUESTION</span><span className="question-count">{session.questionNumber} of {session.totalQuestions}</span></div><h2>{session.question}</h2><div className="answer-label"><label htmlFor="answer">Your answer</label><span>{answer.trim() ? `${answer.trim().split(/\s+/).length} words` : 'Take your time'}</span></div><textarea autoFocus id="answer" maxLength={6000} onChange={(event) => setAnswer(event.target.value)} placeholder="Start wherever feels natural. You can refine your answer as you go…" value={answer} /><div className="answer-tip"><span>✦</span> Try sharing the situation, what you did, and what changed.</div></section>
+        {error && <div className="form-error interview-error" role="alert">{error}</div>}
+        <div className="interview-actions"><span className="saved-note">Your answer is saved with your interview.</span><button className="button button-primary" disabled={!answer.trim() || busy} onClick={() => onSubmit(answer)} type="button">{busy ? 'Reviewing your answer…' : session.questionNumber === session.totalQuestions ? 'Finish practice' : 'Next question'} <span aria-hidden="true">→</span></button></div>
+        <div className="interview-footnote">{session.settings.level} <span>·</span> {session.settings.focus}</div>
+      </main>
+      {showExit && <div className="modal-backdrop" role="presentation"><section aria-labelledby="exit-title" aria-modal="true" className="confirm-modal" role="dialog"><span className="modal-icon">↗</span><h2 id="exit-title">Leave this practice?</h2><p>Your session will remain incomplete. Answers already submitted are saved.</p><div><button className="button button-secondary" onClick={() => setShowExit(false)} type="button">Keep practicing</button><button className="button button-primary" onClick={onExit} type="button">Leave session</button></div></section></div>}
+    </div>
+  );
 }
 
 function Results({ result, onAgain, onHome }) {
-  return <div className="app-shell"><Header onHome={onHome} onLogout={onHome} user={{ name: 'Practice complete' }} /><main className="results-main"><div className="results-icon">✳</div><span className="eyebrow">PRACTICE COMPLETE</span><h1>You made space<br />to get better.</h1><p className="muted results-intro">You worked through {result.questions.length} prompts for a {result.settings.role} interview. Take a moment to reflect on what felt strong.</p><section className="results-card"><div className="results-card-heading"><div><span className="eyebrow">YOUR SESSION</span><h2>{result.settings.role}</h2></div><span className="results-chip">{result.settings.level}</span></div><div className="results-list">{result.questions.map((question, index) => <article className="result-answer" key={question}><span className="result-number">0{index + 1}</span><div><h3>{question}</h3><p>{result.answers[index]?.trim() ? `${result.answers[index].trim().split(/\s+/).length} words in your response` : 'No response entered'}</p></div><span className="result-check">✓</span></article>)}</div><div className="feedback-note"><span>✦</span><p><strong>What’s next</strong><br />AI-powered feedback will be available once the interview API is connected. For now, review your answers and note one thing you’d like to make clearer next time.</p></div></section><div className="results-actions"><button className="button button-secondary" onClick={onHome} type="button">Back to dashboard</button><button className="button button-primary" onClick={onAgain} type="button">Practice again <span aria-hidden="true">→</span></button></div></main><footer className="footer">Progress comes from practice, one answer at a time.</footer></div>;
+  const summary = result.summary;
+  return (
+    <div className="app-shell">
+      <Header onHome={onHome} onLogout={onHome} user={{ name: 'Practice complete' }} />
+      <main className="results-main">
+        <div className="results-icon">✳</div><span className="eyebrow">PRACTICE COMPLETE</span><h1>You made space<br />to get better.</h1>
+        <p className="muted results-intro">Your AI coach reviewed your {result.role} practice answers. Use this feedback to choose what to strengthen next.</p>
+        <section className="results-card">
+          <div className="results-card-heading"><div><span className="eyebrow">YOUR SESSION</span><h2>{result.role}</h2></div><span className="results-chip">{result.level} · {summary.score}/5</span></div>
+          <p className="summary-overview">{summary.overview}</p>
+          <div className="results-list">{result.questions.map((item, index) => <article className="result-answer" key={`${index}-${item.prompt}`}><span className="result-number">0{index + 1}</span><div><h3>{item.prompt}</h3><p>{item.evaluation.score}/5 · {item.evaluation.advice}</p></div><span className="result-check">✓</span></article>)}</div>
+          <div className="feedback-columns"><div><h3>What went well</h3><ul>{summary.strengths.map((item) => <li key={item}>{item}</li>)}</ul></div><div><h3>To work on</h3><ul>{summary.improvements.map((item) => <li key={item}>{item}</li>)}</ul></div></div>
+          <div className="feedback-note"><span>✦</span><p><strong>Next steps</strong><br />{summary.nextSteps.join(' ')}</p></div>
+          <p className="results-disclaimer">Scores and suggestions are AI-generated practice feedback. They are not a measure of your worth or a hiring decision.</p>
+        </section>
+        <div className="results-actions"><button className="button button-secondary" onClick={onHome} type="button">Back to dashboard</button><button className="button button-primary" onClick={onAgain} type="button">Practice again <span aria-hidden="true">→</span></button></div>
+      </main>
+      <footer className="footer">Progress comes from practice, one answer at a time.</footer>
+    </div>
+  );
 }
 
 export default function App() {
   const [user, setUser] = useState(null);
   const [settings, setSettings] = useState(null);
+  const [session, setSession] = useState(null);
+  const [feedback, setFeedback] = useState(null);
   const [result, setResult] = useState(null);
   const [screen, setScreen] = useState('auth');
+  const [busy, setBusy] = useState(false);
+  const [requestError, setRequestError] = useState('');
 
-  function startPractice(nextSettings) { setSettings(nextSettings); setResult(null); setScreen('interview'); }
-  function finishPractice(nextResult) { setResult(nextResult); setScreen('results'); }
-  function goHome() { setResult(null); setScreen('dashboard'); }
+  async function startPractice(nextSettings) {
+    setRequestError('');
+    setBusy(true);
+    try {
+      const created = await apiRequest('interviews/start', { method: 'POST', body: nextSettings });
+      setSettings(nextSettings);
+      setSession({ ...created, settings: nextSettings });
+      setFeedback(null);
+      setResult(null);
+      setScreen('interview');
+    } catch (error) {
+      setRequestError(error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitAnswer(answer) {
+    setRequestError('');
+    setBusy(true);
+    try {
+      const response = await apiRequest(`interviews/${session.interviewId}/answer`, {
+        method: 'POST',
+        body: { answer },
+      });
+      setFeedback(response.feedback);
+      if (response.completed) {
+        setResult(response.result);
+        setScreen('results');
+      } else {
+        setSession((current) => ({
+          ...current,
+          question: response.question,
+          questionNumber: response.questionNumber,
+          totalQuestions: response.totalQuestions,
+        }));
+      }
+    } catch (error) {
+      setRequestError(error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function goHome() {
+    setRequestError('');
+    setFeedback(null);
+    setSession(null);
+    setResult(null);
+    setScreen('dashboard');
+  }
+
   async function signOut() {
-    try { await fetch('/api/auth/logout', { method: 'GET', credentials: 'include' }); } catch { /* The local session can still end if the server is unavailable. */ }
-    setUser(null); setScreen('auth'); setResult(null); setSettings(null);
+    try { await apiRequest('auth/logout'); } catch { /* End the local UI session even if the server is unavailable. */ }
+    setUser(null);
+    setSettings(null);
+    setSession(null);
+    setFeedback(null);
+    setResult(null);
+    setScreen('auth');
   }
 
   if (screen === 'auth') return <AuthScreen onAuthenticated={(nextUser) => { setUser(nextUser); setScreen('dashboard'); }} />;
-  if (screen === 'interview') return <Interview onExit={goHome} onFinish={finishPractice} settings={settings} />;
+  if (screen === 'interview') return <Interview error={requestError} feedback={feedback} onExit={goHome} onSubmit={submitAnswer} session={session} busy={busy} />;
   if (screen === 'results') return <Results onAgain={() => startPractice(settings)} onHome={goHome} result={result} />;
-  return <Dashboard onHome={goHome} onLogout={signOut} onStart={startPractice} user={user} />;
+  return <Dashboard busy={busy} error={requestError} onHome={goHome} onLogout={signOut} onStart={startPractice} user={user} />;
 }
