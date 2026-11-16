@@ -22,7 +22,11 @@ async function apiRequest(path, { method = 'GET', body } = {}) {
   }
 
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.message || 'The request could not be completed.');
+  if (!response.ok) {
+    const error = new Error(data.message || 'The request could not be completed.');
+    error.status = response.status;
+    throw error;
+  }
   return data;
 }
 
@@ -30,10 +34,10 @@ function Brand() {
   return <div className="brand"><span className="brand-mark" aria-hidden="true">i</span><span>interviewly</span></div>;
 }
 
-function AuthScreen({ onAuthenticated }) {
+function AuthScreen({ onAuthenticated, initialError = '' }) {
   const [mode, setMode] = useState('login');
   const [form, setForm] = useState({ name: '', email: '', password: '' });
-  const [error, setError] = useState('');
+  const [error, setError] = useState(initialError);
   const [busy, setBusy] = useState(false);
 
   async function submit(event) {
@@ -102,7 +106,7 @@ function Header({ user, onLogout, onHome }) {
   );
 }
 
-function Dashboard({ user, onStart, onLogout, onHome, busy, error }) {
+function Dashboard({ user, onStart, onLogout, onHome, busy, error, history, historyBusy, historyError, onViewHistory }) {
   const [role, setRole] = useState(roleOptions[0]);
   const [level, setLevel] = useState('Early career');
   const [focus, setFocus] = useState('Communication & clarity');
@@ -122,6 +126,22 @@ function Dashboard({ user, onStart, onLogout, onHome, busy, error }) {
           <div className="focus-section"><div className="focus-label"><span>Focus area</span><span className="optional-label">Choose one</span></div><div className="focus-options">{['Communication & clarity', 'Problem solving', 'Behavioral stories'].map((option, index) => <button className={`focus-option ${focus === option ? 'active' : ''}`} key={option} onClick={() => setFocus(option)} type="button"><span className="focus-icon">{['◌', '⌘', '↗'][index]}</span><span>{option}</span>{focus === option && <span className="check-mark">✓</span>}</button>)}</div></div>
           {error && <div className="form-error start-error" role="alert">{error}</div>}
           <div className="setup-footer"><p><span className="info-icon">i</span> You can take your time. There are no wrong first drafts.</p><button className="button button-primary" disabled={busy} onClick={() => onStart({ role, level, focus })} type="button">{busy ? 'Preparing questions…' : 'Start practice'} <span aria-hidden="true">→</span></button></div>
+        </section>
+        <section className="history-section" aria-labelledby="history-title">
+          <div className="section-heading history-heading"><div><span className="eyebrow">YOUR PROGRESS</span><h2 id="history-title">Practice history</h2></div><span className="history-count">{historyBusy ? 'Loading…' : `${history.length} ${history.length === 1 ? 'session' : 'sessions'}`}</span></div>
+          {historyError && <div className="form-error history-error" role="alert">{historyError}</div>}
+          {!historyBusy && !historyError && history.length === 0 && <div className="history-empty"><span className="history-empty-icon">↗</span><div><strong>Your practice starts here.</strong><p>Completed sessions and feedback will appear here.</p></div></div>}
+          {history.length > 0 && <div className="history-list">{history.map((item) => {
+            const completed = item.status === 'completed';
+            const date = new Date(item.completedAt || item.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+            return <button className="history-item" disabled={!completed} key={item.id} onClick={() => onViewHistory(item.id)} type="button">
+              <span className="history-item-icon" aria-hidden="true">{completed ? '✓' : '…'}</span>
+              <span className="history-item-main"><strong>{item.role}</strong><span>{item.level} · {item.focus}</span></span>
+              <span className={`history-status ${completed ? 'complete' : 'in-progress'}`}>{completed ? `${item.score}/5` : 'In progress'}</span>
+              <span className="history-item-date">{date}</span>
+              {completed && <span className="history-open" aria-hidden="true">→</span>}
+            </button>;
+          })}</div>}
         </section>
       </main>
       <footer className="footer">AI feedback is for practice and learning, not for employment decisions.</footer>
@@ -186,12 +206,56 @@ export default function App() {
   const [screen, setScreen] = useState('auth');
   const [busy, setBusy] = useState(false);
   const [requestError, setRequestError] = useState('');
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authError, setAuthError] = useState('');
+  const [history, setHistory] = useState([]);
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const [historyError, setHistoryError] = useState('');
+  const [historyVersion, setHistoryVersion] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    apiRequest('auth/me').then(({ user: restoredUser }) => {
+      if (!active) return;
+      setUser(restoredUser);
+      setScreen('dashboard');
+    }).catch((error) => {
+      if (!active) return;
+      if (error.status !== 401) setAuthError(error.message);
+      setScreen('auth');
+    }).finally(() => {
+      if (active) setAuthLoading(false);
+    });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!user) return undefined;
+    let active = true;
+    setHistoryBusy(true);
+    setHistoryError('');
+    apiRequest('interviews').then(({ interviews }) => {
+      if (active) setHistory(interviews);
+    }).catch((error) => {
+      if (active) setHistoryError(error.message);
+    }).finally(() => {
+      if (active) setHistoryBusy(false);
+    });
+    return () => { active = false; };
+  }, [user?.id, historyVersion]);
+
+  function onAuthenticated(nextUser) {
+    setAuthError('');
+    setUser(nextUser);
+    setScreen('dashboard');
+  }
 
   async function startPractice(nextSettings) {
     setRequestError('');
     setBusy(true);
     try {
       const created = await apiRequest('interviews/start', { method: 'POST', body: nextSettings });
+      setHistoryVersion((version) => version + 1);
       setSettings(nextSettings);
       setSession({ ...created, settings: nextSettings });
       setFeedback(null);
@@ -216,6 +280,7 @@ export default function App() {
       if (response.completed) {
         setResult(response.result);
         setScreen('results');
+        setHistoryVersion((version) => version + 1);
       } else {
         setSession((current) => ({
           ...current,
@@ -239,6 +304,18 @@ export default function App() {
     setScreen('dashboard');
   }
 
+  async function viewHistoryItem(interviewId) {
+    setHistoryError('');
+    try {
+      const { result: savedResult } = await apiRequest(`interviews/${interviewId}`);
+      setResult(savedResult);
+      setSettings({ role: savedResult.role, level: savedResult.level, focus: savedResult.focus });
+      setScreen('results');
+    } catch (error) {
+      setHistoryError(error.message);
+    }
+  }
+
   async function signOut() {
     try { await apiRequest('auth/logout', { method: 'POST' }); } catch { /* End the local UI session even if the server is unavailable. */ }
     setUser(null);
@@ -249,8 +326,9 @@ export default function App() {
     setScreen('auth');
   }
 
-  if (screen === 'auth') return <AuthScreen onAuthenticated={(nextUser) => { setUser(nextUser); setScreen('dashboard'); }} />;
+  if (authLoading) return <main className="session-loading" role="status">Restoring your practice space…</main>;
+  if (screen === 'auth') return <AuthScreen initialError={authError} onAuthenticated={onAuthenticated} />;
   if (screen === 'interview') return <Interview error={requestError} feedback={feedback} onExit={goHome} onSubmit={submitAnswer} session={session} busy={busy} />;
   if (screen === 'results') return <Results onAgain={() => startPractice(settings)} onHome={goHome} result={result} />;
-  return <Dashboard busy={busy} error={requestError} onHome={goHome} onLogout={signOut} onStart={startPractice} user={user} />;
+  return <Dashboard busy={busy} error={requestError} history={history} historyBusy={historyBusy} historyError={historyError} onHome={goHome} onLogout={signOut} onStart={startPractice} onViewHistory={viewHistoryItem} user={user} />;
 }

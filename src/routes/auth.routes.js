@@ -12,6 +12,7 @@ authrouter.post('/register', authcontroller.registerUser);
  */
 
 authrouter.post('/login', authcontroller.loginUser);
+authrouter.get('/me', requireAuth, authcontroller.getCurrentUser);
 
 /**
  * @route POST /api/auth/logout

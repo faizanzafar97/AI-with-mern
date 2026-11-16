@@ -105,6 +105,22 @@ async function loginUser(req, res) {
   }
 }
 
+async function getCurrentUser(req, res) {
+  try {
+    const user = await userModel.findById(req.user.id).select('_id name email');
+    if (!user) {
+      return res.status(401).json({ message: 'Your account is no longer available. Sign in again.' });
+    }
+
+    return res.status(200).json({
+      user: { id: user._id, name: user.name, email: user.email },
+    });
+  } catch (error) {
+    console.error('Session restore error:', error.message);
+    return res.status(500).json({ message: 'Could not restore your session. Please try again.' });
+  }
+}
+
 async function logoutUser(req, res) {
   const token = req.authToken || req.cookies?.token;
   try {
@@ -126,4 +142,4 @@ async function logoutUser(req, res) {
   }
 }
 
-module.exports = { registerUser, loginUser, logoutUser };
+module.exports = { registerUser, loginUser, getCurrentUser, logoutUser };

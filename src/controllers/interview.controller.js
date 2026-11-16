@@ -4,6 +4,62 @@ const { generateQuestions, evaluateAnswer, summarizeInterview } = require('../se
 
 const allowedLevels = new Set(['Student', 'Early career', 'Mid-level', 'Senior']);
 
+async function listInterviews(req, res) {
+  try {
+    const interviews = await Interview.find({ userId: req.user.id })
+      .select('role level focus status summary createdAt completedAt')
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .lean();
+
+    return res.status(200).json({ interviews: interviews.map((interview) => ({
+      id: String(interview._id),
+      role: interview.role,
+      level: interview.level,
+      focus: interview.focus,
+      status: interview.status,
+      score: interview.summary?.score ?? null,
+      createdAt: interview.createdAt,
+      completedAt: interview.completedAt,
+    })) });
+  } catch (error) {
+    console.error('Could not list interviews:', error.message);
+    return res.status(500).json({ message: 'Interview history could not be loaded. Please try again.' });
+  }
+}
+
+async function getInterview(req, res) {
+  if (!mongoose.isValidObjectId(req.params.id)) {
+    return res.status(404).json({ message: 'Interview not found.' });
+  }
+
+  try {
+    const interview = await Interview.findOne({ _id: req.params.id, userId: req.user.id }).lean();
+    if (!interview) return res.status(404).json({ message: 'Interview not found.' });
+    if (interview.status !== 'completed' || !interview.summary) {
+      return res.status(409).json({ message: 'This practice session is not complete yet.' });
+    }
+
+    return res.status(200).json({
+      result: {
+        interviewId: String(interview._id),
+        role: interview.role,
+        level: interview.level,
+        focus: interview.focus,
+        questions: interview.questions.map((question) => ({
+          prompt: question.prompt,
+          answer: question.answer,
+          evaluation: question.evaluation,
+        })),
+        summary: interview.summary,
+      },
+    });
+  } catch (error) {
+    console.error('Could not load interview:', error.message);
+    return res.status(500).json({ message: 'This practice session could not be loaded. Please try again.' });
+  }
+}
+
 function sendAIError(res, error) {
   if (error.code === 'AI_PROVIDER_CONFIG') {
     return res.status(500).json({ message: 'AI_PROVIDER must be set to "ollama" or "openai" in the backend .env file.' });
@@ -32,11 +88,13 @@ function sendAIError(res, error) {
   }
 
   if (error.status === 429) {
-    const code = String(error.code || '').toLowerCase();
-    const type = String(error.type || '').toLowerCase();
+    const providerError = error.error || {};
+    const code = String(error.code || providerError.code || '').toLowerCase();
+    const type = String(error.type || providerError.type || '').toLowerCase();
     const quotaCodes = new Set([
       'insufficient_quota',
       'credit_balance_exhausted',
+      'billing_hard_limit_reached',
       'organization_spend_limit_exceeded',
       'project_spend_limit_exceeded',
       'organization_usage_limit_exceeded',
@@ -50,9 +108,9 @@ function sendAIError(res, error) {
     }
 
     const retryAfter = error.headers?.get?.('retry-after');
-    if (retryAfter && /^\d+$/.test(retryAfter)) res.set('Retry-After', retryAfter);
+    if (retryAfter && /^\d+(\.\d+)?$/.test(retryAfter)) res.set('Retry-After', retryAfter);
     return res.status(429).json({
-      message: 'The AI service received too many requests. Wait a little, then try again.',
+      message: 'The OpenAI API rate limit was reached. Wait briefly, then try again. If this keeps happening, reduce request frequency or check the project rate limits.',
     });
   }
 
@@ -222,4 +280,4 @@ async function submitAnswer(req, res) {
   return completeInterview(interview, res, evaluation);
 }
 
-module.exports = { startInterview, submitAnswer };
+module.exports = { listInterviews, getInterview, startInterview, submitAnswer };

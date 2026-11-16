@@ -75,13 +75,17 @@ async function requestStructuredOutput({ name, schema, instructions, input }) {
 
   if (provider === 'ollama') {
     const baseUrl = (process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434').replace(/\/+$/, '');
+    const configuredTimeout = Number.parseInt(process.env.OLLAMA_TIMEOUT_MS, 10);
+    const timeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout > 0
+      ? configuredTimeout
+      : 300_000;
     let response;
 
     try {
       response = await fetch(`${baseUrl}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(120_000),
+        signal: AbortSignal.timeout(timeoutMs),
         body: JSON.stringify({
           model: process.env.OLLAMA_MODEL || 'gemma4:e2b',
           messages: [
