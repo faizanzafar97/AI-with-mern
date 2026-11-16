@@ -5,6 +5,23 @@ const { generateQuestions, evaluateAnswer, summarizeInterview } = require('../se
 const allowedLevels = new Set(['Student', 'Early career', 'Mid-level', 'Senior']);
 
 function sendAIError(res, error) {
+  if (error.code === 'AI_PROVIDER_CONFIG') {
+    return res.status(500).json({ message: 'AI_PROVIDER must be set to "ollama" or "openai" in the backend .env file.' });
+  }
+  if (error.code === 'AI_PROVIDER_UNAVAILABLE') {
+    return res.status(503).json({ message: 'Local AI is not running. Start Ollama, then try again.' });
+  }
+  if (error.code === 'AI_PROVIDER_TIMEOUT') {
+    return res.status(504).json({ message: 'The local AI model took too long to respond. Try again or use a smaller model.' });
+  }
+  if (error.code === 'AI_MODEL_NOT_FOUND') {
+    return res.status(503).json({ message: `The local AI model is missing. Run "ollama pull ${process.env.OLLAMA_MODEL || 'gemma4:e2b'}" and try again.` });
+  }
+  if (error.code === 'AI_PROVIDER_ERROR') {
+    console.error('Local AI provider error:', error.message);
+    return res.status(502).json({ message: 'The local AI service could not complete this request.' });
+  }
+
   if (error.code === 'AI_NOT_CONFIGURED') {
     return res.status(503).json({ message: 'AI is not configured. Add OPENAI_API_KEY to the backend .env file.' });
   }

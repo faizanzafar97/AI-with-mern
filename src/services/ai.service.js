@@ -2,6 +2,16 @@ const OpenAI = require('openai');
 
 let openaiClient;
 
+function getProvider() {
+  const provider = (process.env.AI_PROVIDER || 'ollama').trim().toLowerCase();
+  if (provider !== 'openai' && provider !== 'ollama') {
+    const error = new Error('AI_PROVIDER must be either "ollama" or "openai"');
+    error.code = 'AI_PROVIDER_CONFIG';
+    throw error;
+  }
+  return provider;
+}
+
 function getClient() {
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) {
@@ -60,27 +70,73 @@ const summarySchema = {
 };
 
 async function requestStructuredOutput({ name, schema, instructions, input }) {
-  const response = await getClient().responses.create({
-    model: process.env.OPENAI_MODEL || 'gpt-6-astra',
-    input: [
-      { role: 'developer', content: instructions },
-      { role: 'user', content: JSON.stringify(input) },
-    ],
-    text: {
-      format: {
-        type: 'json_schema',
-        name,
-        strict: true,
-        schema,
-      },
-    },
-  });
+  const provider = getProvider();
+  let outputText;
 
-  if (!response.output_text) {
+  if (provider === 'ollama') {
+    const baseUrl = (process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434').replace(/\/+$/, '');
+    let response;
+
+    try {
+      response = await fetch(`${baseUrl}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(120_000),
+        body: JSON.stringify({
+          model: process.env.OLLAMA_MODEL || 'gemma4:e2b',
+          messages: [
+            { role: 'system', content: instructions },
+            { role: 'user', content: JSON.stringify(input) },
+          ],
+          format: schema,
+          stream: false,
+          options: { temperature: 0 },
+          keep_alive: '5m',
+        }),
+      });
+    } catch (cause) {
+      const error = new Error('Could not connect to the local Ollama server');
+      error.code = cause.name === 'TimeoutError' ? 'AI_PROVIDER_TIMEOUT' : 'AI_PROVIDER_UNAVAILABLE';
+      throw error;
+    }
+
+    if (response.status === 404) {
+      const error = new Error(`Ollama model "${process.env.OLLAMA_MODEL || 'gemma4:e2b'}" is not installed`);
+      error.code = 'AI_MODEL_NOT_FOUND';
+      throw error;
+    }
+    if (!response.ok) {
+      const error = new Error(`Ollama returned HTTP ${response.status}`);
+      error.code = 'AI_PROVIDER_ERROR';
+      throw error;
+    }
+
+    const data = await response.json();
+    outputText = data.message?.content;
+  } else {
+    const response = await getClient().responses.create({
+      model: process.env.OPENAI_MODEL || 'gpt-6-astra',
+      input: [
+        { role: 'developer', content: instructions },
+        { role: 'user', content: JSON.stringify(input) },
+      ],
+      text: {
+        format: {
+          type: 'json_schema',
+          name,
+          strict: true,
+          schema,
+        },
+      },
+    });
+    outputText = response.output_text;
+  }
+
+  if (!outputText) {
     throw new Error('The AI provider returned no structured output');
   }
 
-  return JSON.parse(response.output_text);
+  return JSON.parse(outputText);
 }
 
 function validateScore(result) {

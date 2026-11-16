@@ -8,8 +8,12 @@ async function startServer() {
     throw new Error('JWT_SECRET is not configured. Add it to the root .env file.');
   }
 
-  if (!process.env.OPENAI_API_KEY?.trim()) {
-    console.warn('OPENAI_API_KEY is not configured. Authentication will work, but AI interview endpoints will return 503.');
+  const aiProvider = (process.env.AI_PROVIDER || 'ollama').trim().toLowerCase();
+  if (!['ollama', 'openai'].includes(aiProvider)) {
+    throw new Error('AI_PROVIDER must be either "ollama" or "openai".');
+  }
+  if (aiProvider === 'openai' && !process.env.OPENAI_API_KEY?.trim()) {
+    console.warn('OPENAI_API_KEY is not configured. OpenAI interview requests will return 503.');
   }
 
   const port = Number(process.env.PORT || 3000);
