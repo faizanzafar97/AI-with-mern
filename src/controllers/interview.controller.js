@@ -3,11 +3,12 @@ const Interview = require('../models/interview.model');
 const { generateQuestions, evaluateAnswer, summarizeInterview } = require('../services/ai.service');
 
 const allowedLevels = new Set(['Student', 'Early career', 'Mid-level', 'Senior']);
+const MAX_FOLLOW_UPS = 3;
 
 async function listInterviews(req, res) {
   try {
     const interviews = await Interview.find({ userId: req.user.id })
-      .select('role level focus status summary createdAt completedAt')
+      .select('role level focus mode status summary createdAt completedAt')
       .sort({ createdAt: -1 })
       .limit(50)
       .lean();
@@ -17,6 +18,7 @@ async function listInterviews(req, res) {
       role: interview.role,
       level: interview.level,
       focus: interview.focus,
+      mode: interview.mode || 'text',
       status: interview.status,
       score: interview.summary?.score ?? null,
       createdAt: interview.createdAt,
@@ -46,6 +48,7 @@ async function getInterview(req, res) {
         role: interview.role,
         level: interview.level,
         focus: interview.focus,
+        mode: interview.mode || 'text',
         questions: interview.questions.map((question) => ({
           prompt: question.prompt,
           answer: question.answer,
@@ -128,8 +131,11 @@ async function startInterview(req, res) {
   const role = typeof body.role === 'string' ? body.role.trim() : '';
   const level = typeof body.level === 'string' ? body.level.trim() : '';
   const focus = typeof body.focus === 'string' ? body.focus.trim() : '';
+  const mode = body.mode === undefined ? 'text' : body.mode;
+  const includeFollowUps = body.includeFollowUps === true;
 
-  if (role.length < 2 || role.length > 100 || !allowedLevels.has(level) || focus.length < 2 || focus.length > 100) {
+  if (role.length < 2 || role.length > 100 || !allowedLevels.has(level) || focus.length < 2 || focus.length > 100
+    || !['text', 'voice'].includes(mode)) {
     return res.status(400).json({ message: 'Provide a valid role, experience level, and focus area.' });
   }
 
@@ -146,7 +152,9 @@ async function startInterview(req, res) {
       role,
       level,
       focus,
-      questions: generatedQuestions.map(({ text, competency }) => ({ prompt: text, competency })),
+      mode,
+      includeFollowUps,
+      questions: generatedQuestions.map(({ text, competency }) => ({ prompt: text, competency, isFollowUp: false })),
     });
 
     return res.status(201).json({
@@ -154,6 +162,7 @@ async function startInterview(req, res) {
       role: interview.role,
       level: interview.level,
       focus: interview.focus,
+      mode: interview.mode,
       question: interview.questions[0].prompt,
       questionNumber: 1,
       totalQuestions: interview.questions.length,
@@ -176,6 +185,7 @@ async function completeInterview(interview, res, feedback = null) {
       role: interview.role,
       level: interview.level,
       focus: interview.focus,
+      mode: interview.mode || 'text',
       transcript,
     });
 
@@ -248,6 +258,9 @@ async function submitAnswer(req, res) {
       question: currentQuestion.prompt,
       competency: currentQuestion.competency,
       answer,
+      allowFollowUp: interview.includeFollowUps === true
+        && !currentQuestion.isFollowUp
+        && interview.questions.filter((question) => question.isFollowUp).length < MAX_FOLLOW_UPS,
     });
   } catch (error) {
     return sendAIError(res, error);
@@ -255,6 +268,18 @@ async function submitAnswer(req, res) {
 
   currentQuestion.answer = answer;
   currentQuestion.evaluation = evaluation;
+  const followUp = interview.includeFollowUps === true
+    && !currentQuestion.isFollowUp
+    && interview.questions.filter((question) => question.isFollowUp).length < MAX_FOLLOW_UPS
+    ? evaluation.followUp
+    : null;
+  if (followUp) {
+    interview.questions.splice(questionIndex + 1, 0, {
+      prompt: followUp,
+      competency: currentQuestion.competency,
+      isFollowUp: true,
+    });
+  }
 
   try {
     await interview.save();
