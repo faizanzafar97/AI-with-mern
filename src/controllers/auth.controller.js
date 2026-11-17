@@ -130,7 +130,11 @@ async function forgotPassword(req, res) {
   const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
   if (!validEmail(email)) return res.status(400).json({ message: 'Enter a valid email address.' });
 
-  const deliveryConfigured = Boolean(process.env.RESEND_API_KEY?.trim() && process.env.RESET_EMAIL_FROM?.trim());
+  const deliveryConfigured = process.env.NODE_ENV === 'production' && Boolean(
+    process.env.RESEND_API_KEY?.trim()
+    && process.env.RESET_EMAIL_FROM?.trim()
+    && process.env.APP_URL?.trim(),
+  );
   if (process.env.NODE_ENV === 'production' && !deliveryConfigured) {
     return res.status(503).json({ message: 'Password reset email is not configured. Please contact the administrator.' });
   }
@@ -138,6 +142,12 @@ async function forgotPassword(req, res) {
   try {
     const user = await userModel.findOne({ email }).select('_id name email');
     if (!user) return res.status(200).json({ message: RESET_RESPONSE });
+
+    const recentlyRequested = await PasswordReset.exists({
+      userId: user._id,
+      createdAt: { $gt: new Date(Date.now() - 60_000) },
+    });
+    if (recentlyRequested) return res.status(200).json({ message: RESET_RESPONSE });
 
     const token = crypto.randomBytes(32).toString('hex');
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
@@ -181,7 +191,7 @@ async function resetPassword(req, res) {
 
   try {
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-    const reset = await PasswordReset.findOne({ tokenHash, expiresAt: { $gt: new Date() } });
+    const reset = await PasswordReset.findOneAndDelete({ tokenHash, expiresAt: { $gt: new Date() } });
     if (!reset) return res.status(400).json({ message: 'This password reset link is invalid or expired.' });
 
     const user = await userModel.findById(reset.userId).select('+password +sessionVersion');

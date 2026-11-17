@@ -15,6 +15,10 @@ async function startServer() {
   if (aiProvider === 'openai' && !process.env.OPENAI_API_KEY?.trim()) {
     console.warn('OPENAI_API_KEY is not configured. OpenAI interview requests will return 503.');
   }
+  if (process.env.NODE_ENV === 'production'
+    && (!process.env.RESEND_API_KEY?.trim() || !process.env.RESET_EMAIL_FROM?.trim() || !process.env.APP_URL?.trim())) {
+    console.warn('Password reset email is not fully configured. Set RESEND_API_KEY, RESET_EMAIL_FROM, and APP_URL.');
+  }
 
   const port = Number(process.env.PORT || 3000);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {

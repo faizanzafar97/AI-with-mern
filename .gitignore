@@ -86,6 +86,8 @@ models/
 *.pt
 *.pth
 *.onnx
+!src/models/
+!src/models/*.js
 
 # ==============================
 # Java / Maven / Gradle

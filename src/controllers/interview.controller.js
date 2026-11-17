@@ -8,7 +8,7 @@ const MAX_FOLLOW_UPS = 3;
 async function listInterviews(req, res) {
   try {
     const interviews = await Interview.find({ userId: req.user.id })
-      .select('role level focus mode status summary createdAt completedAt')
+      .select('role level focus mode includeFollowUps status summary createdAt completedAt')
       .sort({ createdAt: -1 })
       .limit(50)
       .lean();
@@ -19,6 +19,7 @@ async function listInterviews(req, res) {
       level: interview.level,
       focus: interview.focus,
       mode: interview.mode || 'text',
+      includeFollowUps: interview.includeFollowUps === true,
       status: interview.status,
       score: interview.summary?.score ?? null,
       createdAt: interview.createdAt,
@@ -49,6 +50,7 @@ async function getInterview(req, res) {
         level: interview.level,
         focus: interview.focus,
         mode: interview.mode || 'text',
+        includeFollowUps: interview.includeFollowUps === true,
         questions: interview.questions.map((question) => ({
           prompt: question.prompt,
           answer: question.answer,
@@ -202,6 +204,8 @@ async function completeInterview(interview, res, feedback = null) {
         role: interview.role,
         level: interview.level,
         focus: interview.focus,
+        mode: interview.mode || 'text',
+        includeFollowUps: interview.includeFollowUps === true,
         questions: interview.questions.map((question) => ({
           prompt: question.prompt,
           answer: question.answer,
