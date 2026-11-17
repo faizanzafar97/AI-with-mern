@@ -88,8 +88,8 @@ function AuthScreen({ onAuthenticated, initialError = '', initialMode = 'login',
     : mode === 'register' ? 'Create your account'
       : mode === 'forgot' ? 'Reset your password' : 'Choose a new password';
   const description = mode === 'login' ? 'Pick up where you left off.'
-    : mode === 'register' ? 'A few details and you're ready to practice.'
-      : mode === 'forgot' ? 'We'll send a secure, time-limited reset link if an account matches.'
+    : mode === 'register' ? 'A few details and you are ready to practice.'
+      : mode === 'forgot' ? 'We will send a secure, time-limited reset link if an account matches.'
         : 'Use at least 8 characters for your new password.';
 
   return (
@@ -121,7 +121,7 @@ function AuthScreen({ onAuthenticated, initialError = '', initialMode = 'login',
             {(mode === 'register' || mode === 'reset') && <label>Confirm password<input autoComplete="new-password" minLength="8" name="confirmation" onChange={update} placeholder="Enter the password again" required type="password" value={form.confirmation} /></label>}
             {error && <div className="form-error" role="alert">{error}</div>}
             {message && <div className="form-success" role="status">{message}{resetUrl && <a href={resetUrl}>Open the local reset link</a>}</div>}
-            <button className="button button-primary auth-submit" disabled={busy} type="submit">{busy ? 'Please wait?' : mode === 'login' ? 'Sign in' : mode === 'register' ? 'Create account' : mode === 'forgot' ? 'Send reset link' : 'Save new password'} <span aria-hidden="true">?</span></button>
+            <button className="button button-primary auth-submit" disabled={busy} type="submit">{busy ? 'Please wait...' : mode === 'login' ? 'Sign in' : mode === 'register' ? 'Create account' : mode === 'forgot' ? 'Send reset link' : 'Save new password'} <span aria-hidden="true">?</span></button>
           </form>
           {mode === 'login' && <button className="auth-link" onClick={() => { setMode('forgot'); setError(''); setMessage(''); }} type="button">Forgot password?</button>}
           {(mode === 'forgot' || mode === 'reset') && <button className="auth-link" onClick={() => { setMode('login'); setError(''); setMessage(''); }} type="button">Back to sign in</button>}
@@ -163,7 +163,7 @@ function Dashboard({ user, onStart, onLogout, onHome, onChangePassword, busy, er
           <div className="focus-section"><div className="focus-label"><span>Focus area</span><span className="optional-label">Choose one</span></div><div className="focus-options">{['Communication & clarity', 'Problem solving', 'Behavioral stories'].map((option, index) => <button className={`focus-option ${focus === option ? 'active' : ''}`} key={option} onClick={() => setFocus(option)} type="button"><span className="focus-icon">{['◌', '⌘', '↗'][index]}</span><span>{option}</span>{focus === option && <span className="check-mark">✓</span>}</button>)}</div></div>
           <div className="practice-options">
             <fieldset className="mode-fieldset"><legend>How would you like to practice?</legend><div className="mode-options" role="radiogroup" aria-label="Interview format">
-              {['text', 'voice'].map((option) => <button aria-checked={mode === option} className={'mode-option ' + (mode === option ? 'active' : '')} key={option} onClick={() => setMode(option)} role="radio" type="button"><span className="mode-option-mark">{mode === option ? '?' : ''}</span><span><strong>{option === 'text' ? 'Text interview' : 'Voice interview'}</strong><small>{option === 'text' ? 'Type your answers' : 'Speak answers and hear questions'}</small></span></button>)}
+              {['text', 'voice'].map((option) => <button aria-checked={mode === option} className={'mode-option ' + (mode === option ? 'active' : '')} key={option} onClick={() => setMode(option)} role="radio" type="button"><span className="mode-option-mark">{''}</span><span><strong>{option === 'text' ? 'Text interview' : 'Voice interview'}</strong><small>{option === 'text' ? 'Type your answers' : 'Speak answers and hear questions'}</small></span></button>)}
             </div></fieldset>
             <label className="follow-up-toggle"><input checked={includeFollowUps} onChange={(event) => setIncludeFollowUps(event.target.checked)} type="checkbox" /><span><strong>Ask follow-up questions</strong><small>The AI may ask a short clarification after an answer.</small></span></label>
           </div>
@@ -195,24 +195,88 @@ function Dashboard({ user, onStart, onLogout, onHome, onChangePassword, busy, er
 function Interview({ session, feedback, onSubmit, onExit, busy, error }) {
   const [answer, setAnswer] = useState('');
   const [showExit, setShowExit] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [voiceError, setVoiceError] = useState('');
+  const recognitionRef = useRef(null);
+  const mode = session.mode || session.settings?.mode || 'text';
   const progress = (session.questionNumber / session.totalQuestions) * 100;
 
   useEffect(() => setAnswer(''), [session.questionNumber]);
+  useEffect(() => () => {
+    try { recognitionRef.current?.stop(); } catch { /* Recognition may already have stopped. */ }
+    window.speechSynthesis?.cancel();
+  }, []);
+
+  function speakQuestion() {
+    if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) {
+      setVoiceError('This browser does not support spoken questions. You can still read and answer here.');
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const utterance = new window.SpeechSynthesisUtterance(session.question);
+    utterance.lang = navigator.language || 'en-US';
+    window.speechSynthesis.speak(utterance);
+    setVoiceError('');
+  }
+
+  function startRecording() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setVoiceError('Speech recognition is not supported in this browser. You can type your answer instead.');
+      return;
+    }
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.lang = navigator.language || 'en-US';
+      recognition.continuous = true;
+      recognition.interimResults = false;
+      recognition.onresult = (event) => {
+        const transcript = Array.from(event.results)
+          .slice(event.resultIndex)
+          .map((result) => result[0]?.transcript || '')
+          .join(' ')
+          .trim();
+        if (transcript) setAnswer((current) => current ? current + ' ' + transcript : transcript);
+      };
+      recognition.onerror = (event) => {
+        setVoiceError(event.error === 'not-allowed'
+          ? 'Microphone access was denied. Allow microphone access in your browser settings, or type your answer.'
+          : 'Speech recognition stopped. You can retry or type your answer.');
+        setRecording(false);
+      };
+      recognition.onend = () => {
+        setRecording(false);
+        recognitionRef.current = null;
+      };
+      recognition.start();
+      recognitionRef.current = recognition;
+      setRecording(true);
+      setVoiceError('');
+    } catch {
+      setVoiceError('Could not start speech recognition. Check microphone permission, or type your answer.');
+      setRecording(false);
+    }
+  }
+
+  function stopRecording() {
+    try { recognitionRef.current?.stop(); } catch { /* Recognition may already have stopped. */ }
+    setRecording(false);
+  }
 
   return (
     <div className="app-shell interview-shell">
       <Header onHome={() => setShowExit(true)} onLogout={() => setShowExit(true)} user={{ name: 'Practice session' }} />
       <main className="interview-main">
-        <div className="interview-topline"><button className="back-link" onClick={() => setShowExit(true)} type="button">← <span>End practice</span></button><span className="practice-tag"><span className="date-dot" /> AI PRACTICE SESSION</span><span className="interview-role">{session.settings.role}</span></div>
-        <div className="progress-heading"><div><span className="eyebrow">QUESTION {String(session.questionNumber).padStart(2, '0')} <span className="muted">/ {String(session.totalQuestions).padStart(2, '0')}</span></span><h1>Take a moment.<br />Then answer in your own words.</h1></div><div className="timer-note">◷ &nbsp;No time limit</div></div>
-        <div className="progress-track"><span style={{ width: `${progress}%` }} /></div>
-        {feedback && <section className="turn-feedback"><span className="eyebrow">FEEDBACK ON YOUR LAST ANSWER · {feedback.score}/5</span><p>{feedback.advice}</p></section>}
-        <section className="question-card"><div className="question-card-top"><span className="question-icon">✳</span><span>YOUR QUESTION</span><span className="question-count">{session.questionNumber} of {session.totalQuestions}</span></div><h2>{session.question}</h2><div className="answer-label"><label htmlFor="answer">Your answer</label><span>{answer.trim() ? `${answer.trim().split(/\s+/).length} words` : 'Take your time'}</span></div><textarea autoFocus id="answer" maxLength={6000} onChange={(event) => setAnswer(event.target.value)} placeholder="Start wherever feels natural. You can refine your answer as you go…" value={answer} /><div className="answer-tip"><span>✦</span> Try sharing the situation, what you did, and what changed.</div></section>
+        <div className="interview-topline"><button className="back-link" onClick={() => setShowExit(true)} type="button">End practice</button><span className="practice-tag"><span className="date-dot" /> {mode === 'voice' ? 'VOICE' : 'TEXT'} PRACTICE SESSION</span><span className="interview-role">{session.settings.role}</span></div>
+        <div className="progress-heading"><div><span className="eyebrow">QUESTION {String(session.questionNumber).padStart(2, '0')} <span className="muted">/ {String(session.totalQuestions).padStart(2, '0')}</span></span><h1>Take a moment.<br />Then answer in your own words.</h1></div><div className="timer-note">No time limit</div></div>
+        <div className="progress-track"><span style={{ width: progress + '%' }} /></div>
+        {feedback && <section className="turn-feedback"><span className="eyebrow">FEEDBACK ON YOUR LAST ANSWER ? {feedback.score}/5</span><p>{feedback.advice}</p></section>}
+        <section className="question-card"><div className="question-card-top"><span className="question-icon">*</span><span>YOUR QUESTION</span><span className="question-count">{session.questionNumber} of {session.totalQuestions}</span></div><h2>{session.question}</h2>{mode === 'voice' && <div className="voice-tools"><button className="button button-secondary voice-button" onClick={speakQuestion} type="button">Hear question</button>{recording ? <button className="button button-primary voice-button" onClick={stopRecording} type="button">Stop recording</button> : <button className="button button-primary voice-button" onClick={startRecording} type="button">Start speaking</button>}<span>{recording ? 'Listening...' : 'Your speech appears below as text.'}</span><small className="voice-privacy">The app saves the transcript, not a microphone recording.</small></div>}<div className="answer-label"><label htmlFor="answer">Your answer</label><span>{answer.trim() ? answer.trim().split(/\s+/).length + ' words' : 'Take your time'}</span></div><textarea autoFocus={mode === 'text'} id="answer" maxLength={6000} onChange={(event) => setAnswer(event.target.value)} placeholder="Start wherever feels natural. You can refine your answer as you go..." value={answer} /><div className="answer-tip"><span>*</span> Try sharing the situation, what you did, and what changed.</div>{voiceError && <div className="form-error voice-error" role="alert">{voiceError}</div>}</section>
         {error && <div className="form-error interview-error" role="alert">{error}</div>}
-        <div className="interview-actions"><span className="saved-note">Your answer is saved with your interview.</span><button className="button button-primary" disabled={!answer.trim() || busy} onClick={() => onSubmit(answer)} type="button">{busy ? 'Reviewing your answer…' : session.questionNumber === session.totalQuestions ? 'Finish practice' : 'Next question'} <span aria-hidden="true">→</span></button></div>
-        <div className="interview-footnote">{session.settings.level} <span>·</span> {session.settings.focus}</div>
+        <div className="interview-actions"><span className="saved-note">Your answer is saved with your interview.</span><button className="button button-primary" disabled={!answer.trim() || busy || recording} onClick={() => onSubmit(answer)} type="button">{busy ? 'Reviewing your answer...' : session.questionNumber === session.totalQuestions ? 'Finish practice' : 'Next question'} <span aria-hidden="true">{'>'}</span></button></div>
+        <div className="interview-footnote">{session.settings.level} ? {session.settings.focus}</div>
       </main>
-      {showExit && <div className="modal-backdrop" role="presentation"><section aria-labelledby="exit-title" aria-modal="true" className="confirm-modal" role="dialog"><span className="modal-icon">↗</span><h2 id="exit-title">Leave this practice?</h2><p>Your session will remain incomplete. Answers already submitted are saved.</p><div><button className="button button-secondary" onClick={() => setShowExit(false)} type="button">Keep practicing</button><button className="button button-primary" onClick={onExit} type="button">Leave session</button></div></section></div>}
+      {showExit && <div className="modal-backdrop" role="presentation"><section aria-labelledby="exit-title" aria-modal="true" className="confirm-modal" role="dialog"><span className="modal-icon">?</span><h2 id="exit-title">Leave this practice?</h2><p>Your session will remain incomplete. Answers already submitted are saved.</p><div><button className="button button-secondary" onClick={() => setShowExit(false)} type="button">Keep practicing</button><button className="button button-primary" onClick={onExit} type="button">Leave session</button></div></section></div>}
     </div>
   );
 }
@@ -298,6 +362,10 @@ export default function App() {
   }, [resetToken]);
 
   useEffect(() => {
+    if (resetToken) {
+      setAuthLoading(false);
+      return undefined;
+    }
     let active = true;
     apiRequest('auth/me').then(({ user: restoredUser }) => {
       if (!active) return;
@@ -393,7 +461,7 @@ export default function App() {
     try {
       const { result: savedResult } = await apiRequest(`interviews/${interviewId}`);
       setResult(savedResult);
-      setSettings({ role: savedResult.role, level: savedResult.level, focus: savedResult.focus });
+      setSettings({ role: savedResult.role, level: savedResult.level, focus: savedResult.focus, mode: savedResult.mode || 'text', includeFollowUps: savedResult.includeFollowUps === true });
       setScreen('results');
     } catch (error) {
       setHistoryError(error.message);
