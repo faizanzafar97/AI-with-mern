@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const Blacklist = require('../models/blacklist.model');
+const userModel = require('../models/user.model');
 
 async function requireAuth(req, res, next) {
   const bearerToken = req.headers.authorization?.startsWith('Bearer ')
@@ -22,6 +23,11 @@ async function requireAuth(req, res, next) {
 
     if (isRevoked) {
       return res.status(401).json({ message: 'Session has expired. Sign in again.' });
+    }
+
+    const user = await userModel.findById(payload.id).select('+sessionVersion').lean();
+    if (!user || Number(payload.ver || 0) !== Number(user.sessionVersion || 0)) {
+      return res.status(401).json({ message: 'Your session has expired. Sign in again.' });
     }
 
     req.user = { id: payload.id };

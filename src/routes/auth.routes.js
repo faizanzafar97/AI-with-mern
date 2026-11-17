@@ -12,7 +12,10 @@ authrouter.post('/register', authcontroller.registerUser);
  */
 
 authrouter.post('/login', authcontroller.loginUser);
+authrouter.post('/forgot-password', authcontroller.forgotPassword);
+authrouter.post('/reset-password', authcontroller.resetPassword);
 authrouter.get('/me', requireAuth, authcontroller.getCurrentUser);
+authrouter.post('/change-password', requireAuth, authcontroller.changePassword);
 
 /**
  * @route POST /api/auth/logout
